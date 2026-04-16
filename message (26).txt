@@ -1,0 +1,143 @@
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Parent = player:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
+
+local lockBtn = Instance.new("TextButton")
+lockBtn.Size = UDim2.new(0, 70, 0, 70)
+lockBtn.Position = UDim2.new(0.5, -35, 0.8, -35)
+lockBtn.BackgroundTransparency = 1
+lockBtn.Text = "🔓"
+lockBtn.TextScaled = true
+lockBtn.Parent = gui
+
+-- Drag system
+local dragging = false
+local dragStart
+local startPos
+
+lockBtn.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		dragging = true
+		dragStart = input.Position
+		startPos = lockBtn.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch) then
+
+		local delta = input.Position - dragStart
+
+		lockBtn.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+-- AIM LOCK SYSTEM
+local locked = false
+local target = nil
+local lockConnection = nil
+
+local function getClosestPlayer()
+	local closest = nil
+	local shortest = math.huge
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = plr.Character.HumanoidRootPart
+
+			local screenPoint, onScreen = camera:WorldToViewportPoint(hrp.Position)
+
+			if onScreen then
+				local dist = (Vector2.new(screenPoint.X, screenPoint.Y)
+					- Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)).Magnitude
+
+				if dist < shortest then
+					shortest = dist
+					closest = plr
+				end
+			end
+		end
+	end
+
+	return closest
+end
+
+local function startLock()
+	lockConnection = RunService.RenderStepped:Connect(function()
+
+		-- keep target stable
+		if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then
+			target = getClosestPlayer()
+		end
+
+		if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = target.Character.HumanoidRootPart
+			local camPos = camera.CFrame.Position
+
+			camera.CFrame = CFrame.new(camPos, hrp.Position)
+		end
+	end)
+end
+
+local function stopLock()
+	if lockConnection then
+		lockConnection:Disconnect()
+		lockConnection = nil
+	end
+	target = nil
+end
+
+-- reset on death
+local function setupDeathReset()
+	local char = player.Character or player.CharacterAdded:Wait()
+	local humanoid = char:WaitForChild("Humanoid")
+
+	humanoid.Died:Connect(function()
+		locked = false
+		target = nil
+		lockBtn.Text = "🔓"
+		stopLock()
+	end)
+end
+
+player.CharacterAdded:Connect(function()
+	task.wait(1)
+	setupDeathReset()
+end)
+
+setupDeathReset()
+
+-- toggle button
+lockBtn.MouseButton1Click:Connect(function()
+	locked = not locked
+	lockBtn.Text = locked and "🔒" or "🔓"
+
+	if locked then
+		target = getClosestPlayer()
+		startLock()
+	else
+		stopLock()
+	end
+end)
